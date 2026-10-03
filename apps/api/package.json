@@ -1,0 +1,3 @@
+{ "name": "@journeys/api", "version": "0.0.0", "private": true, "type": "module",
+  "dependencies": { "@journeys/db": "workspace:*", "@journeys/engine": "workspace:*", "@journeys/shared": "workspace:*",
+    "fastify": "^5.1.0", "zod": "^3.23.8", "drizzle-orm": "^0.36.0" } }

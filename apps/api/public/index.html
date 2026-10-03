@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Journeys</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171f;--mut:#6b7280;--line:#e3e6ec;--ok:#16a34a;--cur:#2563eb;--bad:#dc2626;--warn:#d97706;--okbg:#e8f6ee;--curbg:#e8effd;--badbg:#fdeaea}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e8eaee;--mut:#8a93a3;--line:#262c36;--okbg:#10291a;--curbg:#12254a;--badbg:#3a1616}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,sans-serif}
+header{display:flex;gap:16px;align-items:center;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);flex-wrap:wrap}
+h1{font-size:16px;margin:0}.stats{display:flex;gap:8px;margin-left:auto}
+.stat{padding:2px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line);font-size:12px}.stat b{margin-left:4px}
+main{display:grid;grid-template-columns:320px 1fr;gap:16px;padding:16px 20px;max-width:1300px;margin:auto}
+@media(max-width:800px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:0 0 10px}
+form{display:flex;gap:6px;flex-wrap:wrap}input,button{font:inherit;padding:6px 9px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+input{flex:1;min-width:90px}button{background:var(--cur);color:#fff;border:0;cursor:pointer}
+.row{padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}.row:hover{background:var(--bg)}.row.sel{border-color:var(--cur);background:var(--curbg)}
+.row small{color:var(--mut);display:block}.pill{float:right;font-size:11px;padding:1px 8px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+.pill.completed{color:var(--ok)}.pill.waiting{color:var(--cur)}.pill.running{color:var(--warn)}.pill.failed{color:var(--bad)}
+svg text{font:12px system-ui,sans-serif;fill:var(--ink)}svg .sub{fill:var(--mut);font-size:10.5px}
+.node rect{fill:var(--card);stroke:var(--line);stroke-width:1.5}.node.done rect{fill:var(--okbg);stroke:var(--ok)}.node.cur rect{fill:var(--curbg);stroke:var(--cur);stroke-width:2.5}.node.bad rect{fill:var(--badbg);stroke:var(--bad)}.node.skip{opacity:.45}
+.edge{fill:none;stroke:var(--line);stroke-width:1.5}.edge.on{stroke:var(--ok);stroke-width:2.5}
+.tl{border-left:2px solid var(--line);margin-left:6px}.tl div{padding:4px 0 8px 14px;position:relative}.tl div:before{content:"";position:absolute;left:-6px;top:9px;width:10px;height:10px;border-radius:50%;background:var(--ok)}
+.tl .m:before{background:var(--cur)}.tl .e:before{background:var(--mut)}.tl .f:before{background:var(--bad)}.tl small{color:var(--mut)}
+.mut{color:var(--mut)}code{font-size:12px;background:var(--bg);padding:1px 5px;border-radius:5px}
+</style></head><body>
+<header><h1>Journeys</h1><span class="mut" id="upd"></span><div class="stats" id="stats"></div></header>
+<main>
+<div>
+  <div class="card"><h2>Submit a test lead</h2>
+    <form id="lead"><input id="em" type="email" placeholder="email" required><input id="fn" placeholder="first name"><button>Submit</button></form>
+    <div class="mut" id="msg" style="margin-top:6px;font-size:12px"></div></div>
+  <div class="card"><h2>Executions</h2><div id="list"></div></div>
+</div>
+<div id="detail"><div class="card mut">Select an execution, or submit a lead to start one.</div></div>
+</main>
+<script>
+let sel=null,list=[];
+const $=id=>document.getElementById(id), api=p=>fetch(p).then(r=>r.json());
+const ago=d=>{const s=Math.round((Date.now()-new Date(d))/1000);return s<0?'in '+(-s)+'s':s<60?s+'s ago':s<3600?Math.round(s/60)+'m ago':Math.round(s/3600)+'h ago'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+$('lead').onsubmit=async e=>{e.preventDefault();const r=await fetch('/v1/forms/signup/submissions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:$('em').value,firstName:$('fn').value||undefined})});const j=await r.json();$('msg').textContent=r.ok?'Started '+j.executionsStarted.length+' execution(s)':JSON.stringify(j.error);if(r.ok){sel=j.executionsStarted[0]||sel;$('em').value=$('fn').value='';refresh()}};
+function layout(def){const lv={[def.start]:0},q=[def.start],kids=n=>n.type==='condition'?[n.yes,n.no]:n.next?[n.next]:[];
+  for(let i=0;i<q.length&&i<200;i++){const id=q[i];for(const k of kids(def.nodes[id])){if((lv[k]??-1)<lv[id]+1&&lv[id]<30){lv[k]=lv[id]+1;q.push(k)}}}
+  const by={};Object.entries(lv).forEach(([id,l])=>(by[l]??=[]).push(id));const W=170,H=70,pos={},maxw=Math.max(...Object.values(by).map(a=>a.length));
+  Object.entries(by).forEach(([l,ids])=>ids.forEach((id,i)=>pos[id]={x:(maxw-ids.length)*W/2+i*W+10,y:l*H+10}));
+  return{pos,w:maxw*W+10,h:(Math.max(...Object.keys(by))+1)*H+10,kids}}
+function graph(d){const def=d.definition,{pos,w,h,kids}=layout(def),done=new Set(d.steps.filter(s=>s.status==='succeeded').map(s=>s.nodeId)),cur=d.execution.currentNodeId,ended=['completed','failed','cancelled','exited'].includes(d.execution.status);
+  let out=`<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px">`;
+  for(const[id,n]of Object.entries(def.nodes))if(pos[id])for(const k of kids(n)){const a=pos[id],b=pos[k];if(!b)continue;const on=done.has(id)&&(done.has(k)||k===cur&&!ended);
+    out+=`<path class="edge ${on?'on':''}" d="M${a.x+75} ${a.y+36}C${a.x+75} ${a.y+55},${b.x+75} ${b.y-18},${b.x+75} ${b.y}"/>`}
+  for(const[id,n]of Object.entries(def.nodes)){const p=pos[id];if(!p)continue;const failed=d.execution.status==='failed'&&id===cur;
+    const cls=failed?'bad':done.has(id)?'done':(id===cur&&!ended)?'cur':ended||done.size?'skip':'';
+    const label=n.type==='send_email'?n.template.subject:n.type==='wait'?'Wait '+Object.entries(n.duration).map(([u,v])=>v+' '+u).join(' '):n.type==='condition'?n.check.eventType+'?':n.type;
+    const st=failed?'failed':done.has(id)?'done':(id===cur&&!ended)?(d.execution.status==='waiting'?'waiting · wakes '+ago(d.execution.wakeAt):'running'):'';
+    out+=`<g class="node ${cls}"><rect x="${p.x}" y="${p.y}" width="150" height="36" rx="8"/><text x="${p.x+10}" y="${p.y+15}">${esc(label.slice(0,22))}</text><text class="sub" x="${p.x+10}" y="${p.y+28}">${esc(id)} · ${esc(st||n.type)}</text></g>`}
+  return out+'</svg>'}
+function timeline(d){const it=[];
+  d.steps.forEach(s=>it.push({t:s.completedAt||s.startedAt,c:s.status==='failed'?'f':'',h:`<b>${esc(s.nodeId)}</b> <small>${s.status} (step ${s.stepSeq})</small>${s.result?.detail?'<br><small>'+esc(JSON.stringify(s.result.detail))+'</small>':''}`}));
+  d.messages.forEach(m=>it.push({t:m.sentAt||m.createdAt,c:'m',h:`✉ <b>${esc(m.payload.subject)}</b> → ${esc(m.toAddress)} <small>${m.status}${m.error?' · '+esc(m.error):''}</small>`}));
+  d.events.forEach(e=>it.push({t:e.occurredAt,c:'e',h:`${esc(e.type)} <small>${esc(e.source)}</small>`}));
+  return it.sort((a,b)=>new Date(a.t)-new Date(b.t)).map(i=>`<div class="${i.c}">${i.h}<br><small>${new Date(i.t).toLocaleTimeString()}</small></div>`).join('')}
+async function refresh(){list=await api('/v1/executions');$('upd').textContent='updated '+new Date().toLocaleTimeString();
+  const c={};list.forEach(e=>c[e.status]=(c[e.status]||0)+1);$('stats').innerHTML=['running','waiting','completed','failed'].map(s=>`<span class="stat">${s}<b>${c[s]||0}</b></span>`).join('');
+  if(!sel&&list[0])sel=list[0].id;
+  $('list').innerHTML=list.map(e=>`<div class="row ${e.id===sel?'sel':''}" onclick="sel='${e.id}';refresh()"><span class="pill ${e.status}">${e.status}</span>${esc(e.email)}<small>${esc(e.journey)} v${e.version} · ${ago(e.startedAt)}</small></div>`).join('')||'<span class="mut">No executions yet</span>';
+  if(sel){const d=await api('/v1/executions/'+sel);if(d.execution)$('detail').innerHTML=`<div class="card"><h2>${esc(d.contact.email)} · ${esc(d.execution.status)}</h2>${graph(d)}</div><div class="card"><h2>Timeline</h2><div class="tl">${timeline(d)}</div></div>`}}
+refresh();setInterval(refresh,2500);
+</script></body></html>

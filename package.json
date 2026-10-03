@@ -1,0 +1,29 @@
+{
+  "name": "journeys",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @journeys/db generate",
+    "db:migrate": "pnpm --filter @journeys/db migrate",
+    "seed": "tsx --env-file=.env scripts/seed.ts",
+    "dev:api": "tsx watch --env-file=.env apps/api/src/index.ts",
+    "dev:worker": "tsx watch --env-file=.env apps/worker/src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "@journeys/db": "workspace:*",
+    "@journeys/shared": "workspace:*",
+    "drizzle-orm": "^0.36.0",
+    "@journeys/engine": "workspace:*"
+  }
+}

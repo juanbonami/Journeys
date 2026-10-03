@@ -1,0 +1,2 @@
+{ "name": "@journeys/worker", "version": "0.0.0", "private": true, "type": "module",
+  "dependencies": { "@journeys/db": "workspace:*", "@journeys/engine": "workspace:*", "@journeys/providers": "workspace:*", "bullmq": "^5.30.0" } }
