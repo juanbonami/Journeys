@@ -16,7 +16,7 @@ export class SmtpEmailProvider implements EmailProvider {
         subject: input.subject,
         html: input.html,
         text: input.text,
-        headers: { "X-Journeys-Tags": JSON.stringify(input.tags) },
+        headers: { ...input.headers, "X-Journeys-Tags": JSON.stringify(input.tags) },
       });
       return { providerMessageId: String(info.messageId) };
     } catch (e) {

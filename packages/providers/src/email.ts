@@ -4,6 +4,7 @@ export type SendEmailInput = {
   subject: string;
   html: string;
   text?: string;
+  headers?: Record<string, string>;
   /** Our own ids, echoed back by the provider so events can be mapped to messages without guessing. */
   tags: Record<string, string>;
 };

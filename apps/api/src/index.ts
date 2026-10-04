@@ -5,12 +5,15 @@ import { asc, desc, eq } from "drizzle-orm";
 import {
   contacts, createDb, events, journeyExecutions, journeys, journeyVersions, messages, nodeExecutions, workspaces,
 } from "@journeys/db";
-import { createQueue, enqueueNew, startExecutionsForEvent } from "@journeys/engine";
-import { JourneyDefinition } from "@journeys/shared";
+import { createQueue, enqueueNew, ingestEvent, startExecutionsForEvent, verifyUnsubscribeToken } from "@journeys/engine";
+import { EventType, JourneyDefinition } from "@journeys/shared";
 
 const { db } = createDb();
 const queue = createQueue();
 const app = Fastify({ logger: true });
+const secret = process.env.UNSUBSCRIBE_SECRET ?? "dev-only-secret";
+// One-click unsubscribe (RFC 8058) posts a form-encoded body; accept it as a raw string.
+app.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_req, body, done) => done(null, body));
 
 // TODO(auth): Milestone 1 resolves the workspace from a header. Replace with API keys / form keys.
 async function workspaceId(req: { headers: Record<string, unknown> }): Promise<string> {
@@ -99,6 +102,58 @@ app.get("/v1/contacts/:id/timeline", async (req, reply) => {
   return { contact, executions: execs.map((e, i) => ({ ...e, steps: steps[i] })), messages: msgs, events: evs };
 });
 
+
+// ---- Events & unsubscribe ----
+// Generic event intake for your own app (e.g. purchase.created). Provider adapters call ingestEvent() directly.
+const IncomingEvent = z.object({
+  contactId: z.string().uuid().optional(),
+  email: z.string().email().optional(),
+  type: EventType,
+  externalId: z.string().max(200).optional(),
+  data: z.record(z.string(), z.unknown()).optional(),
+}).refine((b) => b.contactId || b.email, "contactId or email required");
+app.post("/v1/events", async (req, reply) => {
+  const body = IncomingEvent.safeParse(req.body);
+  if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
+  const wsId = await workspaceId(req);
+  const [contact] = await db.select().from(contacts).where(body.data.contactId ? eq(contacts.id, body.data.contactId) : eq(contacts.email, body.data.email!.toLowerCase()));
+  if (!contact || contact.workspaceId !== wsId) return reply.code(404).send({ error: "contact not found" });
+  const out = await ingestEvent(db, { workspaceId: wsId, contactId: contact.id, type: body.data.type, source: "app", externalId: body.data.externalId, data: body.data.data });
+  return reply.code(out.inserted ? 201 : 200).send(out);
+});
+
+// DEV ONLY: pretend the provider reported an open/click/bounce/complaint for a message.
+app.post("/v1/dev/messages/:id/events", async (req, reply) => {
+  if (process.env.NODE_ENV === "production") return reply.code(404).send({ error: "not found" });
+  const { id } = req.params as { id: string };
+  const body = z.object({ type: EventType, data: z.record(z.string(), z.unknown()).optional() }).safeParse(req.body);
+  if (!body.success) return reply.code(400).send({ error: body.error.flatten() });
+  const [m] = await db.select().from(messages).where(eq(messages.id, id));
+  if (!m) return reply.code(404).send({ error: "message not found" });
+  // Same shape a real adapter will produce: the message id rides in `data`, which is what conditions match on.
+  const out = await ingestEvent(db, {
+    workspaceId: m.workspaceId, contactId: m.contactId, type: body.data.type, source: "dev",
+    externalId: `sim_${crypto.randomUUID()}`, data: { messageId: m.id, executionId: m.executionId, nodeId: m.nodeId, simulated: true, ...body.data.data },
+  });
+  return reply.code(201).send(out);
+});
+
+const page = (title: string, body: string) =>
+  `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><body style="font:16px system-ui;max-width:420px;margin:15vh auto;padding:0 20px;text-align:center"><h2>${title}</h2>${body}</body>`;
+// GET only shows a confirm button: link scanners that pre-fetch URLs must not unsubscribe people.
+app.get("/unsubscribe/:token", async (req, reply) => {
+  const { token } = req.params as { token: string };
+  if (!verifyUnsubscribeToken(token, secret)) return reply.code(400).type("text/html").send(page("Invalid link", "<p>This unsubscribe link is not valid.</p>"));
+  return reply.type("text/html").send(page("Unsubscribe", `<p>Stop receiving emails from us?</p><form method="post"><button style="font:inherit;padding:8px 18px">Yes, unsubscribe</button></form>`));
+});
+app.post("/unsubscribe/:token", async (req, reply) => {
+  const { token } = req.params as { token: string };
+  const contactId = verifyUnsubscribeToken(token, secret);
+  if (!contactId) return reply.code(400).type("text/html").send(page("Invalid link", "<p>This unsubscribe link is not valid.</p>"));
+  const [c] = await db.select().from(contacts).where(eq(contacts.id, contactId));
+  if (c) await ingestEvent(db, { workspaceId: c.workspaceId, contactId: c.id, type: "email.unsubscribed", source: "app", externalId: `unsub_${c.id}` });
+  return reply.type("text/html").send(page("You're unsubscribed", "<p>You won't receive any more emails from us.</p>"));
+});
 
 // ---- Dashboard (read-only views + static UI) ----
 const uiHtml = () => readFileSync(new URL("../public/index.html", import.meta.url), "utf8"); // re-read so edits show on refresh

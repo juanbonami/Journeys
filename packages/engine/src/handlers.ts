@@ -4,6 +4,7 @@ import { ProviderError } from "@journeys/providers";
 import { durationMs, type JourneyNode } from "@journeys/shared";
 import type { Ctx } from "./context";
 import { renderTemplate } from "./render";
+import { unsubscribeUrl } from "./unsubscribe";
 
 export type Execution = typeof journeyExecutions.$inferSelect;
 
@@ -40,10 +41,14 @@ const sendEmail: Handler<"send_email"> = async (ctx, exec, node) => {
   const suppressedReason = !contact.email ? "no_email" : contact.emailStatus !== "subscribed" ? `email_${contact.emailStatus}` : null;
 
   const vars = { firstName: contact.firstName, lastName: contact.lastName, email: contact.email };
+  // Every email carries an unsubscribe link; journey authors can't forget it.
+  const unsubUrl = unsubscribeUrl(ctx.appUrl, contact.id, ctx.secret);
   const payload = {
     subject: renderTemplate(node.template.subject, vars),
-    html: renderTemplate(node.template.html, vars, true),
-    text: node.template.text ? renderTemplate(node.template.text, vars) : undefined,
+    html:
+      renderTemplate(node.template.html, vars, true) +
+      `<p style="font-size:12px;color:#888;margin-top:24px"><a href="${unsubUrl}">Unsubscribe</a></p>`,
+    text: (node.template.text ? renderTemplate(node.template.text, vars) : "") + `\n\nUnsubscribe: ${unsubUrl}`,
   };
 
   // Claim the send slot. The unique idempotency key means a retried step can never create a second message.
@@ -87,6 +92,7 @@ const sendEmail: Handler<"send_email"> = async (ctx, exec, node) => {
       subject: payload.subject,
       html: payload.html,
       text: payload.text,
+      headers: { "List-Unsubscribe": `<${unsubUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
       tags: { messageId: msg.id, executionId: exec.id, nodeId: exec.currentNodeId, workspaceId: exec.workspaceId },
     });
     const sentAt = ctx.now();

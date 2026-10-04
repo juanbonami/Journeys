@@ -7,6 +7,10 @@ export type Ctx = {
   queue: Queue;
   email: EmailProvider;
   emailFrom: string;
+  /** Public base URL of the API, used in unsubscribe links. */
+  appUrl: string;
+  /** HMAC secret for unsubscribe tokens. */
+  secret: string;
   /** Injectable clock. All scheduling uses the app clock (not DB now()) so wake_at and claim agree. */
   now: () => Date;
 };

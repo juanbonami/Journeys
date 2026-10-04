@@ -12,6 +12,8 @@ const ctx: Ctx = {
   queue,
   email: createEmailProvider(),
   emailFrom: process.env.EMAIL_FROM ?? "Journeys <hello@example.com>",
+  appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  secret: process.env.UNSUBSCRIBE_SECRET ?? "dev-only-secret",
   now: () => new Date(),
 };
 

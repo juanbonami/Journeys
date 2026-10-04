@@ -22,6 +22,7 @@ export class SesEmailProvider implements EmailProvider {
           Content: {
             Simple: {
               Subject: { Data: input.subject, Charset: "UTF-8" },
+              Headers: Object.entries(input.headers ?? {}).map(([Name, Value]) => ({ Name, Value })),
               Body: {
                 Html: { Data: input.html, Charset: "UTF-8" },
                 ...(input.text ? { Text: { Data: input.text, Charset: "UTF-8" } } : {}),
